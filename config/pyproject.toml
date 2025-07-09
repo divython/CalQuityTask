@@ -1,0 +1,49 @@
+# Calquity Project Metadata
+# Professional Financial Document Search System
+# Author: Divyanshu Chaudhary
+
+[project]
+name = "calquity"
+version = "1.0.0"
+description = "Professional hybrid search system for financial document analysis"
+author = "Divyanshu Chaudhary"
+author_email = "divyanshu.chaudhary@example.com"
+license = "Proprietary"
+readme = "README.md"
+python_requires = ">=3.8"
+keywords = ["financial", "search", "vector", "nlp", "documents", "hybrid"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Financial Services",
+    "Topic :: Text Processing :: Information Retrieval",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11"
+]
+
+[project.urls]
+Repository = "https://github.com/divyanshu-chaudhary/calquity"
+Documentation = "https://github.com/divyanshu-chaudhary/calquity/blob/main/README.md"
+Issues = "https://github.com/divyanshu-chaudhary/calquity/issues"
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.black]
+line-length = 88
+target-version = ['py38']
+include = '\.pyi?$'
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
