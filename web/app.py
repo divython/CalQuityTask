@@ -303,10 +303,10 @@ def calculate_overlap_metrics(results_dict):
     
     metrics = {}
     
-    # Calculate overlap percentages
-    dense_sparse_overlap = len(set(dense_ids) & set(sparse_ids)) / len(dense_ids) * 100
-    dense_hybrid_overlap = len(set(dense_ids) & set(hybrid_ids)) / len(dense_ids) * 100
-    sparse_hybrid_overlap = len(set(sparse_ids) & set(hybrid_ids)) / len(sparse_ids) * 100
+    # Calculate overlap percentages (with zero-division protection)
+    dense_sparse_overlap = (len(set(dense_ids) & set(sparse_ids)) / len(dense_ids) * 100) if len(dense_ids) > 0 else 0
+    dense_hybrid_overlap = (len(set(dense_ids) & set(hybrid_ids)) / len(dense_ids) * 100) if len(dense_ids) > 0 else 0
+    sparse_hybrid_overlap = (len(set(sparse_ids) & set(hybrid_ids)) / len(sparse_ids) * 100) if len(sparse_ids) > 0 else 0
     
     metrics['overlaps'] = {
         'Dense ∩ Sparse': dense_sparse_overlap,

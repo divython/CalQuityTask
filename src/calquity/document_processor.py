@@ -203,7 +203,7 @@ class DocumentProcessor:
             logger.error(f"Failed to read file {filepath}: {e}")
             raise
     
-    def chunk_text(self, text: str, max_chunk_size: int = 1000, overlap: int = 200) -> List[str]:
+    def chunk_text(self, text: str, max_chunk_size: int = 800, overlap: int = 100) -> List[str]:
         """
         Intelligently chunk text into overlapping segments for optimal embedding.
         
@@ -215,39 +215,64 @@ class DocumentProcessor:
         Returns:
             List of text chunks with optimal overlap
         """
+        # Clean the text first
+        text = re.sub(r'\s+', ' ', text).strip()
+        
         if len(text) <= max_chunk_size:
-            return [text]
+            return [text] if text else []
         
         chunks = []
         start = 0
         
         while start < len(text):
-            end = start + max_chunk_size
+            end = min(start + max_chunk_size, len(text))
             
             # If we're not at the end, try to find a good break point
             if end < len(text):
                 # Look for sentence endings within the last 200 characters
-                last_period = text.rfind('.', start, end)
-                last_newline = text.rfind('\n', start, end)
-                last_space = text.rfind(' ', start, end)
+                search_start = max(start, end - 200)
+                last_period = text.rfind('.', search_start, end)
+                last_newline = text.rfind('\n', search_start, end)
+                last_space = text.rfind(' ', search_start, end)
                 
                 # Choose the best break point
-                break_point = max(last_period, last_newline, last_space)
-                if break_point > start + max_chunk_size - 200:  # Within reasonable distance
-                    end = break_point + 1
+                break_points = [p for p in [last_period, last_newline, last_space] if p > search_start]
+                if break_points:
+                    end = max(break_points) + 1
             
             chunk = text[start:end].strip()
-            if chunk:  # Only add non-empty chunks
-                chunks.append(chunk)
             
-            # Move start position with overlap
-            start = end - overlap
+            # Only add non-empty chunks with meaningful content
+            if chunk and len(chunk) > 50:  # Minimum chunk size
+                # Avoid adding chunks that are too similar to previous ones
+                if not chunks or self._chunk_similarity(chunk, chunks[-1]) < 0.8:
+                    chunks.append(chunk)
             
-            # Prevent infinite loops
-            if start >= len(text):
+            # Move start position with overlap, but ensure progress
+            next_start = max(start + 1, end - overlap)
+            if next_start >= len(text):
                 break
+            start = next_start
         
-        logger.debug(f"Split text into {len(chunks)} chunks")
+        logger.debug(f"Split text into {len(chunks)} unique chunks")
+        return chunks
+    
+    def _chunk_similarity(self, chunk1: str, chunk2: str) -> float:
+        """Calculate similarity between two chunks to avoid duplicates."""
+        # Simple character-based similarity
+        if not chunk1 or not chunk2:
+            return 0.0
+        
+        # Get first 100 characters for comparison
+        c1 = chunk1[:100].lower()
+        c2 = chunk2[:100].lower()
+        
+        if c1 == c2:
+            return 1.0
+        
+        # Count common characters
+        common = sum(1 for a, b in zip(c1, c2) if a == b)
+        return common / max(len(c1), len(c2))
         return chunks
         
         # Extract document type
@@ -272,9 +297,8 @@ class DocumentProcessor:
             elif file_path.endswith('.html'):
                 with open(file_path, 'r', encoding='utf-8') as f:
                     content = f.read()
-                    # Basic HTML cleaning - remove tags
-                    content = re.sub(r'<[^>]+>', ' ', content)
-                    content = re.sub(r'\s+', ' ', content)
+                    # Comprehensive HTML cleaning
+                    content = self._clean_html_content(content)
                     return content.strip()
             elif file_path.endswith('.pdf'):
                 # PDF processing using PyPDF2
@@ -333,6 +357,69 @@ class DocumentProcessor:
         # Keep only top 50 most frequent words
         sorted_words = sorted(word_counts.items(), key=lambda x: x[1], reverse=True)[:50]
         return dict(sorted_words)
+    
+    def _clean_html_content(self, html_content: str) -> str:
+        """Clean HTML content comprehensively for better search quality."""
+        import html
+        
+        try:
+            # Step 1: Decode HTML entities
+            content = html.unescape(html_content)
+            
+            # Step 2: Remove script, style, and meta elements
+            content = re.sub(r'<script[^>]*>.*?</script>', '', content, flags=re.DOTALL | re.IGNORECASE)
+            content = re.sub(r'<style[^>]*>.*?</style>', '', content, flags=re.DOTALL | re.IGNORECASE)
+            content = re.sub(r'<meta[^>]*>', '', content, flags=re.IGNORECASE)
+            
+            # Step 3: Remove HTML comments
+            content = re.sub(r'<!--.*?-->', '', content, flags=re.DOTALL)
+            
+            # Step 4: Replace HTML entities thoroughly
+            entity_replacements = [
+                ('&nbsp;', ' '), ('&#160;', ' '), ('&#xa0;', ' '),
+                ('&amp;', '&'), ('&#38;', '&'),
+                ('&lt;', '<'), ('&#60;', '<'),
+                ('&gt;', '>'), ('&#62;', '>'),
+                ('&quot;', '"'), ('&#34;', '"'),
+                ('&apos;', "'"), ('&#39;', "'"),
+                ('&#8211;', '-'), ('&#8212;', '--'),
+                ('&#8217;', "'"), ('&#8220;', '"'), ('&#8221;', '"'),
+                ('&#36;', '$'), ('&#37;', '%'), ('&#40;', '('), ('&#41;', ')'),
+            ]
+            
+            for entity, replacement in entity_replacements:
+                content = content.replace(entity, replacement)
+            
+            # Step 5: Remove all HTML tags
+            content = re.sub(r'<[^>]+>', '', content)
+            
+            # Step 6: Clean up whitespace and formatting
+            # Replace multiple spaces with single space
+            content = re.sub(r'\s+', ' ', content)
+            
+            # Remove leading/trailing whitespace from lines
+            lines = [line.strip() for line in content.split('\n')]
+            
+            # Remove empty lines and join
+            content = '\n'.join(line for line in lines if line.strip())
+            
+            # Step 7: Remove common HTML artifacts that might remain
+            artifacts = ['[if !supportLists]', '[endif]', 'Microsoft Word', 'mso-']
+            for artifact in artifacts:
+                content = content.replace(artifact, '')
+            
+            return content.strip()
+            
+        except Exception as e:
+            logger.error(f"HTML cleaning failed: {e}")
+            # Fallback: basic tag removal
+            content = re.sub(r'<[^>]+>', '', html_content)
+            content = re.sub(r'\s+', ' ', content)
+            return content.strip()
+        cleaned_lines = [line.strip() for line in lines if len(line.strip()) > 10]
+        content = '\n'.join(cleaned_lines)
+        
+        return content.strip()
 
 def ingest_documents():
     """Main ingestion function"""
